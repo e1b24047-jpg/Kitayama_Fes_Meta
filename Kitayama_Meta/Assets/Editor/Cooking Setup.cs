@@ -1,123 +1,298 @@
-using UnityEditor;
-using UnityEditor.SceneManagement;
-using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using System;
 
-namespace Kitayama.Cooking.Editor
+namespace Kitayama.Cooking
 {
-    // 既存のKitchenSetup / StoveSetupで作ったオブジェクトへ配線する。
-    public static class CookingSetup
+    // 高さは、離陸前の肉の重心を基準にする。
+    public sealed class CookingSession
     {
-        [MenuItem("Kitayama/Setup Cooking")]
-        public static void Setup()
+        public enum Doneness
         {
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                Debug.LogWarning("Stop Play Mode before setup.");
-                return;
-            }
-            GameObject kitchen = GameObject.Find("KitchenPrototype");
-            if (kitchen == null) { Debug.LogError("KitchenPrototype was not found."); return; }
-            Transform meat = kitchen.transform.Find("Meat");
-            Transform pan = kitchen.transform.Find("FryingPan");
-            Transform stove = kitchen.transform.Find("Stove");
-            if (meat == null || pan == null || stove == null)
-            {
-                Debug.LogError("Create the kitchen and stove first (KitchenSetup and StoveSetup).");
-                return;
-            }
-            BoxCollider panBase = pan.Find("Base")?.GetComponent<BoxCollider>();
-            Transform heatPoint = stove.Find("HeatPoint");
-            XRGrabInteractable grab = meat.GetComponent<XRGrabInteractable>();
-            Transform visual = meat.Find("Visual");
-            if (panBase == null || heatPoint == null || grab == null || visual == null
-                || meat.GetComponent<Rigidbody>() == null)
-            {
-                Debug.LogError("Expected FryingPan/Base, Stove/HeatPoint, Meat/Visual, Rigidbody and XRGrabInteractable.");
-                return;
-            }
-            if (meat.GetComponent<MeatCooking>() != null || stove.Find("CookingMeter") != null)
-            {
-                Debug.LogWarning("Cooking is already set up. Existing settings were not changed.");
-                return;
-            }
-            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (font == null) { Debug.LogError("LegacyRuntime.ttf could not be loaded."); return; }
-
-            Undo.IncrementCurrentGroup();
-            int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Setup Cooking");
-            GameObject panel = new GameObject("CookingMeter", typeof(RectTransform), typeof(Canvas));
-            panel.transform.SetParent(stove, false);
-            RectTransform panelRect = panel.GetComponent<RectTransform>();
-            panelRect.sizeDelta = new Vector2(380f, 140f);
-            panelRect.localPosition = new Vector3(0f, 0.38f, 0.22f);
-            panelRect.localRotation = Quaternion.identity;
-            panelRect.localScale = Vector3.one * 0.0013f;
-            Canvas canvas = panel.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.WorldSpace;
-            canvas.sortingOrder = 10;
-
-            Image background = ImageObject("Background", panel.transform,
-                Vector2.zero, new Vector2(380f, 140f));
-            background.color = new Color(0.025f, 0.035f, 0.055f, 0.94f);
-            Text title = TextObject("Value", panel.transform, new Vector2(0, 42),
-                new Vector2(360, 34), font, 25, "RAW   0 / 10");
-            Image[] bars = new Image[10];
-            for (int i = 0; i < bars.Length; i++)
-            {
-                bars[i] = ImageObject("Segment_" + i.ToString("00"), panel.transform,
-                    new Vector2(-153f + i * 34f, 0), new Vector2(28, 30));
-                bars[i].color = new Color(0.20f, 0.22f, 0.25f);
-            }
-            Text status = TextObject("Status", panel.transform, new Vector2(0, -44),
-                new Vector2(365, 32), font, 18, "Put meat in the pan on the stove");
-            // 表示専用なのでGraphicRaycasterやColliderは付けない。
-            Undo.RegisterCreatedObjectUndo(panel, "Create Cooking Meter");
-
-            MeatCooking cooking = Undo.AddComponent<MeatCooking>(meat.gameObject);
-            cooking.panBase = panBase;
-            cooking.heatPoint = heatPoint;
-            cooking.meatGrab = grab;
-            cooking.meatRenderers = visual.GetComponentsInChildren<Renderer>(true);
-            cooking.meterSegments = bars;
-            cooking.meterLabel = title;
-            cooking.statusLabel = status;
-            EditorUtility.SetDirty(cooking);
-            EditorSceneManager.MarkSceneDirty(meat.gameObject.scene);
-            Undo.CollapseUndoOperations(undoGroup);
-            Selection.activeGameObject = meat.gameObject;
-            Debug.Log("COOKING_SETUP_OK: Save the scene, then enter Play Mode.");
+            Raw,
+            Cooked,
+            Burnt
         }
 
-        static RectTransform RectObject(string name, Transform parent, Vector2 position, Vector2 size)
+        public enum Phase
         {
-            GameObject obj = new GameObject(name, typeof(RectTransform));
-            RectTransform rect = obj.GetComponent<RectTransform>();
-            rect.SetParent(parent, false);
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = position;
-            rect.sizeDelta = size;
-            return rect;
+            Waiting,
+            Heating,
+            Paused,
+            Airborne,
+            Finished,
+            Failed,
+            RetryReady
         }
-        static Image ImageObject(string name, Transform parent, Vector2 position, Vector2 size)
+
+        public float Seconds { get; private set; }
+
+        public int FilledSegments =>
+            Math.Min(
+                10,
+                (int)Math.Floor(
+                    Seconds / fullTime * 10f + 0.00001f
+                )
+            );
+
+        public Doneness Grade =>
+            FilledSegments >= burntAt
+                ? Doneness.Burnt
+                : FilledSegments >= cookedAt
+                    ? Doneness.Cooked
+                    : Doneness.Raw;
+
+        public Phase CurrentPhase { get; private set; } = Phase.Waiting;
+
+        public bool Finished => CurrentPhase == Phase.Finished;
+
+        public bool CookingLocked { get; private set; }
+
+        public bool HasHeated => Seconds > 0;
+
+        public float PeakHeight { get; private set; }
+
+        public int Attempts { get; private set; }
+
+        readonly float fullTime;
+        readonly float minAirTime;
+        readonly float minRise;
+        readonly float catchTime;
+        readonly float timeout;
+        readonly float dropDistance;
+
+        readonly int cookedAt;
+        readonly int burntAt;
+
+        bool previousOnPan;
+        bool departing;
+        bool airborne;
+        bool failed;
+
+        float airSeconds;
+        float catchSeconds;
+        float lastSupportedHeight;
+        float launchHeight;
+        float candidatePeak;
+
+        public CookingSession(
+            float fullTime = 20f,
+            int cookedAt = 4,
+            int burntAt = 8,
+            float minAirTime = 0.08f,
+            float minRise = 0.05f,
+            float catchTime = 0.12f,
+            float timeout = 5f,
+            float dropDistance = 0.6f)
         {
-            Image image = RectObject(name, parent, position, size).gameObject.AddComponent<Image>();
-            image.raycastTarget = false;
-            return image;
+            if (fullTime <= 0 ||
+                cookedAt < 1 ||
+                burntAt <= cookedAt ||
+                burntAt > 10 ||
+                minAirTime <= 0 ||
+                minRise <= 0 ||
+                catchTime <= 0 ||
+                timeout <= 0 ||
+                dropDistance <= 0)
+            {
+                throw new ArgumentException(
+                    "Invalid cooking settings."
+                );
+            }
+
+            this.fullTime = fullTime;
+            this.cookedAt = cookedAt;
+            this.burntAt = burntAt;
+            this.minAirTime = minAirTime;
+            this.minRise = minRise;
+            this.catchTime = catchTime;
+            this.timeout = timeout;
+            this.dropDistance = dropDistance;
         }
-        static Text TextObject(string name, Transform parent, Vector2 position, Vector2 size,
-            Font font, int fontSize, string value)
+
+        // failedContact:
+        // 床・机などへの接触。フライパン自身は除外する。
+        public void Step(
+            float dt,
+            bool onPan,
+            bool nearHeat,
+            bool held,
+            float meatHeight,
+            bool failedContact = false,
+            float verticalVelocity = 0f)
         {
-            Text text = RectObject(name, parent, position, size).gameObject.AddComponent<Text>();
-            text.font = font;
-            text.fontSize = fontSize;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.white;
-            text.text = value;
-            text.raycastTarget = false;
-            return text;
+            if (Finished || dt <= 0)
+            {
+                return;
+            }
+
+            // 肉を直接手で掴んでいる場合。
+            if (held)
+            {
+                if (airborne)
+                {
+                    Fail();
+                }
+
+                previousOnPan = false;
+                departing = false;
+                airSeconds = 0;
+                catchSeconds = 0;
+
+                CurrentPhase = failed
+                    ? Phase.Failed
+                    : HasHeated
+                        ? Phase.Paused
+                        : Phase.Waiting;
+
+                return;
+            }
+
+            // 失敗後は、肉をフライパンへ戻して安定させる。
+            if (failed)
+            {
+                catchSeconds = onPan
+                    ? catchSeconds + dt
+                    : 0;
+
+                if (catchSeconds >= catchTime)
+                {
+                    failed = false;
+                    previousOnPan = true;
+                    lastSupportedHeight = meatHeight;
+                    catchSeconds = 0;
+
+                    CurrentPhase = Phase.RetryReady;
+                }
+
+                return;
+            }
+
+            // 投げた後の処理。
+            if (airborne)
+            {
+                airSeconds += dt;
+
+                PeakHeight = Math.Max(
+                    PeakHeight,
+                    meatHeight - launchHeight
+                );
+
+                if (failedContact ||
+                    airSeconds >= timeout ||
+                    meatHeight < launchHeight - dropDistance)
+                {
+                    Fail();
+                    return;
+                }
+
+                // 上昇中や一瞬だけの接触では成功にしない。
+                catchSeconds =
+                    onPan && verticalVelocity <= 0.2f
+                        ? catchSeconds + dt
+                        : 0;
+
+                if (catchSeconds >= catchTime)
+                {
+                    CurrentPhase = Phase.Finished;
+                }
+
+                return;
+            }
+
+            // 肉がフライパンに載っている場合。
+            if (onPan)
+            {
+                departing = false;
+                airSeconds = 0;
+                catchSeconds = 0;
+                lastSupportedHeight = meatHeight;
+
+                if (nearHeat && !CookingLocked)
+                {
+                    Seconds = Math.Min(
+                        fullTime,
+                        Seconds + dt
+                    );
+
+                    CurrentPhase = Phase.Heating;
+                }
+                else
+                {
+                    CurrentPhase = CookingLocked
+                        ? Phase.RetryReady
+                        : HasHeated
+                            ? Phase.Paused
+                            : Phase.Waiting;
+                }
+
+                previousOnPan = true;
+                return;
+            }
+
+            // フライパンから離れた瞬間を記録する。
+            if (previousOnPan && HasHeated)
+            {
+                departing = true;
+                launchHeight = lastSupportedHeight;
+                airSeconds = 0;
+                candidatePeak = 0;
+            }
+
+            previousOnPan = false;
+
+            if (departing)
+            {
+                airSeconds += dt;
+
+                candidatePeak = Math.Max(
+                    candidatePeak,
+                    meatHeight - launchHeight
+                );
+
+                if (failedContact ||
+                    airSeconds >= timeout ||
+                    meatHeight < launchHeight - dropDistance)
+                {
+                    departing = false;
+
+                    CurrentPhase = HasHeated
+                        ? Phase.Paused
+                        : Phase.Waiting;
+
+                    return;
+                }
+
+                // 一定時間離れ、一定の高さに達したら有効な投げ。
+                if (airSeconds >= minAirTime &&
+                    candidatePeak >= minRise)
+                {
+                    airborne = true;
+                    departing = false;
+
+                    // 最初の有効な投げで焼き加減を固定する。
+                    CookingLocked = true;
+
+                    PeakHeight = candidatePeak;
+                    Attempts++;
+
+                    CurrentPhase = Phase.Airborne;
+                    return;
+                }
+            }
+
+            CurrentPhase = HasHeated
+                ? Phase.Paused
+                : Phase.Waiting;
+        }
+
+        void Fail()
+        {
+            failed = true;
+            airborne = false;
+            departing = false;
+            previousOnPan = false;
+            catchSeconds = 0;
+
+            CurrentPhase = Phase.Failed;
         }
     }
 }
