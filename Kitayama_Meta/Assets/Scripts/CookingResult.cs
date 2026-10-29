@@ -21,6 +21,9 @@ namespace Kitayama.Cooking
         public int[] cookingPoints =
             CookingScore.DefaultCookingPoints();
 
+        // タイマー側からゲーム終了を確認するための情報。
+        public bool IsFinished => completed;
+
         MeatCooking subscribedCooking;
 
         bool completed;
@@ -53,7 +56,6 @@ namespace Kitayama.Cooking
             }
 
             subscribedCooking = cooking;
-
             subscribedCooking.CookingCompleted += OnCompleted;
         }
 
@@ -74,9 +76,9 @@ namespace Kitayama.Cooking
             transition = null;
         }
 
+        // 通常のキャッチ成功。
         void OnCompleted(CookingSession.Doneness grade, int meter)
         {
-            // 同じ成功で何度も画面を切り替えない。
             if (completed || cooking.Session == null)
             {
                 return;
@@ -84,14 +86,51 @@ namespace Kitayama.Cooking
 
             completed = true;
 
-            // キャッチ成功時の値を確定する。
+            SetScores(
+                meter,
+                cooking.Session.PeakHeight,
+                false
+            );
+
+            transition = StartCoroutine(ShowAfterEffect());
+        }
+
+        // 時間切れ。その時点の点数で即座に終了する。
+        public void ShowTimeoutResult()
+        {
+            if (completed || cooking == null)
+            {
+                return;
+            }
+
+            completed = true;
+
+            CookingSession session = cooking.Session;
+
+            int meter = session != null
+                ? session.FilledSegments
+                : 0;
+
+            float height = session != null
+                ? session.PeakHeight
+                : 0f;
+
+            SetScores(meter, height, true);
+            ShowPanel();
+        }
+
+        void SetScores(
+            int meter,
+            float peakHeight,
+            bool timeUp)
+        {
             int cook = CookingScore.CookingPoints(
                 meter,
                 cookingPoints
             );
 
             int height = CookingScore.HeightPoints(
-                cooking.Session.PeakHeight
+                peakHeight
             );
 
             long total = (long)cook + height;
@@ -105,20 +144,33 @@ namespace Kitayama.Cooking
             totalText.text =
                 $"TOTAL   {total} pts";
 
-            transition = StartCoroutine(ShowResult());
+            Transform title =
+                resultPanel.transform.Find("Title");
+
+            if (title != null &&
+                title.TryGetComponent<Text>(out var label))
+            {
+                label.text = timeUp ? "TIME UP" : "RESULT";
+            }
         }
 
-        IEnumerator ShowResult()
+        IEnumerator ShowAfterEffect()
         {
-            // キャッチエフェクトを見せてから切り替える。
             yield return new WaitForSecondsRealtime(
                 Mathf.Max(0f, effectWaitSeconds)
             );
 
-            // XRカメラは残し、料理用オブジェクトを非表示にする。
+            ShowPanel();
+
+            transition = null;
+        }
+
+        void ShowPanel()
+        {
+            // キッチンを止めることで、
+            // 時間切れ後に加熱や投げが進まないようにする。
             kitchen.SetActive(false);
 
-            // 視界の正面にリザルトを表示する。
             resultPanel.transform.SetParent(
                 viewCamera.transform,
                 false
@@ -134,13 +186,10 @@ namespace Kitayama.Cooking
                 Vector3.one * 0.0015f;
 
             resultPanel.SetActive(true);
-
-            transition = null;
         }
 
         void OnDestroy()
         {
-            // 再生中にカメラへ移したパネルも片付ける。
             if (resultPanel != null)
             {
                 Destroy(resultPanel);
