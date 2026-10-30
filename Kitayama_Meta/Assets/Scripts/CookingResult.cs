@@ -95,7 +95,7 @@ namespace Kitayama.Cooking
             transition = StartCoroutine(ShowAfterEffect());
         }
 
-        // 時間切れ。その時点の点数で即座に終了する。
+        // 時間切れでは高さ点を0点にする。
         public void ShowTimeoutResult()
         {
             if (completed || cooking == null)
@@ -111,11 +111,9 @@ namespace Kitayama.Cooking
                 ? session.FilledSegments
                 : 0;
 
-            float height = session != null
-                ? session.PeakHeight
-                : 0f;
+            // 高さを0として採点する。
+            SetScores(meter, 0f, true);
 
-            SetScores(meter, height, true);
             ShowPanel();
         }
 
