@@ -284,6 +284,30 @@ namespace Kitayama.Cooking
                 : Phase.Waiting;
         }
 
+        public void CancelThrowForRespawn()
+        {
+            if (Finished)
+                return;
+
+            previousOnPan = false;
+            departing = false;
+            airborne = false;
+
+            airSeconds = 0f;
+            catchSeconds = 0f;
+            candidatePeak = 0f;
+            PeakHeight = 0f;
+
+            // 焼き時間・焼き加減の固定状態・試行回数は維持する。
+            failed = CookingLocked;
+
+            CurrentPhase = failed
+                ? Phase.Failed
+                : HasHeated
+                    ? Phase.Paused
+                    : Phase.Waiting;
+        }
+
         void Fail()
         {
             failed = true;
