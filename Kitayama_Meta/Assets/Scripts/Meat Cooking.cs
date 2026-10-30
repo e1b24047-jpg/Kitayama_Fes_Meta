@@ -130,6 +130,22 @@ namespace Kitayama.Cooking
             RefreshAppearance();
         }
 
+
+        public void NotifyGroundRespawn()
+        {
+            if (Session == null || Session.Finished)
+                return;
+
+            Session.CancelThrowForRespawn();
+
+            // ˆÚ“®‘O‚ÌÚGó‘Ô‚ğc‚³‚È‚¢B
+            touchingBase = false;
+            failedContact = false;
+
+            RefreshAppearance();
+        }
+
+
         void FixedUpdate()
         {
             if (Session == null || Session.Finished)
