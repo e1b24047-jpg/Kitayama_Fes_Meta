@@ -7946,8 +7946,8 @@ MonoBehaviour:
   cooking: {fileID: 1845219000}
   result: {fileID: 1073697206}
   smokeMaterial: {fileID: 2100000, guid: 8eee0c057a608e14590aab4c571e555e, type: 2}
-  particlesPerSecond: 5
-  opacity: 0.13
+  particlesPerSecond: 8.3
+  opacity: 0.209
 --- !u!1 &1868507949
 GameObject:
   m_ObjectHideFlags: 0
