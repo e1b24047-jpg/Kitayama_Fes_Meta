@@ -7670,6 +7670,7 @@ GameObject:
   - component: {fileID: 1845218997}
   - component: {fileID: 1845219000}
   - component: {fileID: 1845219001}
+  - component: {fileID: 1845219002}
   m_Layer: 0
   m_Name: Meat
   m_TagString: Untagged
@@ -7930,6 +7931,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::GroundRespawn
   cooking: {fileID: 1845219000}
   result: {fileID: 1073697206}
+--- !u!114 &1845219002
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1845218995}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1faee1f20ad55549b209a896e7304a2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MeatSmoke
+  cooking: {fileID: 1845219000}
+  result: {fileID: 1073697206}
+  smokeMaterial: {fileID: 2100000, guid: 8eee0c057a608e14590aab4c571e555e, type: 2}
+  particlesPerSecond: 5
+  opacity: 0.13
 --- !u!1 &1868507949
 GameObject:
   m_ObjectHideFlags: 0
