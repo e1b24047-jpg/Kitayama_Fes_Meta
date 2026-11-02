@@ -3,7 +3,6 @@ using UnityEngine;
 
 namespace Kitayama.Cooking
 {
-    // MeatCookingがキャッチを判定する前に回転を記録する。
     [DefaultExecutionOrder(-50)]
     [RequireComponent(
         typeof(MeatCooking),
@@ -20,8 +19,13 @@ namespace Kitayama.Cooking
 
         bool armed;
         bool tracking;
+        bool previousSupported;
 
-        // キャッチ成功後だけ、確定した回転数を返す。
+        // Inspectorで確認するための計測値。
+        // 手動で変更する必要はありません。
+        [SerializeField]
+        float measuredDegrees;
+
         public int SuccessfulTurns =>
             cooking != null &&
             cooking.Session == trackedSession &&
@@ -41,8 +45,11 @@ namespace Kitayama.Cooking
         {
             trackedSession = null;
             degrees = 0;
+            measuredDegrees = 0f;
+
             armed = false;
             tracking = false;
+            previousSupported = false;
         }
 
         void FixedUpdate()
@@ -62,10 +69,15 @@ namespace Kitayama.Cooking
             if (trackedSession != session)
             {
                 trackedSession = session;
+
                 degrees = 0;
+                measuredDegrees = 0f;
+
                 armed = false;
                 tracking = false;
+
                 previous = current;
+                previousSupported = cooking.SupportedByPan;
             }
 
             if (session.Finished)
@@ -75,31 +87,52 @@ namespace Kitayama.Cooking
                 cooking.meatGrab != null &&
                 cooking.meatGrab.isSelected;
 
-            // 肉を直接掴んだ場合や、投げる工程に失敗した場合。
+            // 直接掴んだ場合や失敗した場合は、
+            // その試行の回転を取り消す。
             if (held ||
                 session.CurrentPhase ==
                     CookingSession.Phase.Failed)
             {
                 degrees = 0;
+                measuredDegrees = 0f;
+
                 armed = false;
                 tracking = false;
+
                 previous = current;
+                previousSupported = cooking.SupportedByPan;
+
                 return;
             }
 
             if (cooking.SupportedByPan)
             {
-                // フライパン上での回転や、
-                // キャッチ後に安定するまでの揺れは数えない。
+                // 修正点：
+                // 前回は空中、今回はフライパン上なら、
+                // 着地までに回った最後の角度も加算する。
+                if (tracking &&
+                    !previousSupported &&
+                    session.CurrentPhase ==
+                        CookingSession.Phase.Airborne)
+                {
+                    AddRotation(current);
+                }
+
+                // 投げる前のフライパン上の回転は数えない。
+                // キャッチ判定待ちの場合は、計測値を維持する。
                 if (session.CurrentPhase !=
                     CookingSession.Phase.Airborne)
                 {
                     degrees = 0;
+                    measuredDegrees = 0f;
+
                     tracking = false;
                     armed = true;
                 }
 
                 previous = current;
+                previousSupported = true;
+
                 return;
             }
 
@@ -108,27 +141,37 @@ namespace Kitayama.Cooking
             {
                 tracking = true;
                 armed = false;
+
                 degrees = 0;
+                measuredDegrees = 0f;
             }
 
             if (tracking)
             {
-                Quaternion delta =
-                    Quaternion.Inverse(previous) * current;
-
-                degrees += RotationScoreMath.DeltaDegrees(
-                    delta.x,
-                    delta.y,
-                    delta.z,
-                    delta.w
-                );
+                AddRotation(current);
             }
 
             previous = current;
+            previousSupported = false;
+        }
+
+        void AddRotation(Quaternion current)
+        {
+            Quaternion delta =
+                Quaternion.Inverse(previous) * current;
+
+            degrees += RotationScoreMath.DeltaDegrees(
+                delta.x,
+                delta.y,
+                delta.z,
+                delta.w
+            );
+
+            measuredDegrees = (float)degrees;
         }
     }
 
-    // このクラスも同じファイルに入れてください。
+    // 以下も同じファイルに入れてください。
     public static class RotationScoreMath
     {
         public static double DeltaDegrees(
@@ -152,7 +195,7 @@ namespace Kitayama.Cooking
                 return 0;
             }
 
-            // ごく小さな計算誤差だけ補正する。
+            // ごく小さな数値誤差だけを補正する。
             double turns = Math.Floor(
                 (Math.Max(0d, degrees) + 0.001d) / 360d
             );

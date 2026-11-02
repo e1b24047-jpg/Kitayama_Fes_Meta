@@ -8362,6 +8362,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c727bb432a0d79e4281aff075ffe4a71, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Kitayama.Cooking.MeatRotationScore
+  measuredDegrees: 0
 --- !u!1 &1868507949
 GameObject:
   m_ObjectHideFlags: 0
