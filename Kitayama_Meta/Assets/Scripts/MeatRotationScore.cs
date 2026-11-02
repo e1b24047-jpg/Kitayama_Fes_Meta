@@ -205,8 +205,10 @@ namespace Kitayama.Cooking
             );
         }
 
-        // ”¼‰ñ“]‚²‚Æ‚É5“_B
+        //”¼‰ñ“]‚²‚Æ‚É5“_’Ç‰Á
         public static long Points(int halfTurns)
         {
             return Math.Max(0, halfTurns) * 5L;
         }
+    }
+}
