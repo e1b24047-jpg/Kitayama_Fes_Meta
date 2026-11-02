@@ -162,7 +162,7 @@ namespace Kitayama.Cooking
             if (rotationText != null)
             {
                 rotationText.text =
-                    $"ROTATION  ({turns} turns)     {rotation} pts";
+                    $"ROTATION  ({turns} x 180deg)     {rotation} pts";
             }
 
             totalText.text =
