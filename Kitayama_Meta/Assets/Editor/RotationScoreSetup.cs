@@ -116,7 +116,7 @@ public static class RotationScoreSetup
             rotationText.raycastTarget = false;
 
             rotationText.text =
-                "ROTATION  (0 turns)     0 pts";
+                "ROTATION  (0 x 180deg)     0 pts";
 
             Undo.RegisterCreatedObjectUndo(
                 obj,

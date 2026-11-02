@@ -195,17 +195,18 @@ namespace Kitayama.Cooking
                 return 0;
             }
 
-            // ごく小さな数値誤差だけを補正する。
-            double turns = Math.Floor(
-                (Math.Max(0d, degrees) + 0.001d) / 360d
+            double halfTurns = Math.Floor(
+                (Math.Max(0d, degrees) + 0.001d) / 180d
             );
 
-            return (int)Math.Min(int.MaxValue, turns);
+            return (int)Math.Min(
+                int.MaxValue,
+                halfTurns
+            );
         }
 
-        public static long Points(int turns)
+        // 半回転ごとに5点。
+        public static long Points(int halfTurns)
         {
-            return Math.Max(0, turns) * 3L;
+            return Math.Max(0, halfTurns) * 5L;
         }
-    }
-}
