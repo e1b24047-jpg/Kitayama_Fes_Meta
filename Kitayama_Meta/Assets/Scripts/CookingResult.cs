@@ -161,8 +161,11 @@ namespace Kitayama.Cooking
 
             if (rotationText != null)
             {
+                // turns‚Í”¼‰ñ“]‚Ì‰ñ”‚È‚Ì‚ÅA2‚ÅŠ„‚Á‚Ä‰ñ“]”‚É‚·‚éB
+                float rotations = turns * 0.5f;
+
                 rotationText.text =
-                    $"ROTATION  ({turns} x 180deg)     {rotation} pts";
+                    $"ROTATION  ({rotations:0.#} turns)     {rotation} pts";
             }
 
             totalText.text =
